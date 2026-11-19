@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J-LO test</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  :root { --bg: #f2f5f4; --surface: #fff; --ink: #172123; --muted: #586769; --line: #d2dbd9; --accent: #0f5e63; --ok: #1e7a46; --ok-bg: #e2f4e8; --err: #b42318; --err-bg: #fdeceb; --warn: #8f5a00; --warn-bg: #fff3d6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 14px; font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); }
+  h1 { font-size: 17px; margin: 0 0 2px; color: var(--accent); }
+  .sous { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+  .carte { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  li { padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+  li.ok { background: var(--ok-bg); color: var(--ok); }
+  li.err { background: var(--err-bg); color: var(--err); }
+  li.att { background: var(--warn-bg); color: var(--warn); }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 6px; padding: 9px 12px; cursor: pointer; width: 100%; margin: 0 0 8px; }
+  button.prim { background: var(--accent); color: #fff; }
+  button.sec { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  #resume { font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; background: #172123; color: #e8eeec; border-radius: 6px; padding: 8px 10px; margin: 0; }
+  .petit { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<h1>Planning J-LO · test</h1>
+<p class="sous">Est-ce que le planning pourra s'ouvrir dans votre Excel ?</p>
+
+<div class="carte"><ul id="etat"><li class="att">Ouverture…</li></ul></div>
+
+<div id="boutons" hidden>
+  <button class="prim" id="lancer">Lancer le test</button>
+  <button class="sec" id="effacer">Effacer le test</button>
+  <p class="petit">Le test lit le nom de vos onglets, puis écrit dans un onglet caché « JLO_TEST » (sans toucher à vos onglets). Faites-le dans un classeur vide ou une copie.</p>
+</div>
+
+<div class="carte" id="res-carte" hidden><ul id="res"></ul></div>
+
+<div class="carte" id="resume-carte" hidden>
+  <p class="petit" style="margin:0 0 6px">À m'envoyer (une photo suffit) :</p>
+  <pre id="resume"></pre>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const INFO = { site: 'oui' };
+  function ligne(ul, cls, txt) { const li = document.createElement('li'); li.className = cls; li.textContent = txt; $(ul).appendChild(li); }
+  function resume() {
+    $('resume-carte').hidden = false;
+    const LAB = { site: 'Site du complément', microsoft: 'Site Microsoft', excel: 'Excel', excelApi: 'Fonctions Excel', lecture: 'Lecture', ecriture: 'Écriture', grosTexte: 'Gros texte', ongletCache: 'Onglet caché', reglages: 'Réglages', erreur: 'Erreur' };
+    $('resume').textContent = Object.entries(INFO).map(([k, v]) => `${LAB[k] || k} : ${v}`).join('\n');
+  }
+  function apiMax() {
+    let max = '';
+    for (let v = 1; v <= 20; v++) { try { if (Office.context.requirements.isSetSupported('ExcelApi', '1.' + v)) max = '1.' + v; } catch (e) {} }
+    return max || 'aucune';
+  }
+  // 1) office.js chargé ? 2) dans Excel ?
+  window.addEventListener('load', () => {
+    if (typeof Office === 'undefined') {
+      $('etat').textContent = '';
+      ligne('etat', 'err', "Le site de Microsoft pour les compléments (appsforoffice.microsoft.com) ne s'ouvre pas sur cet ordinateur.");
+      INFO.microsoft = 'bloqué'; resume(); return;
+    }
+    Office.onReady((info) => {
+      $('etat').textContent = '';
+      INFO.microsoft = 'oui';
+      if (info.host !== Office.HostType.Excel) {
+        ligne('etat', 'ok', "Cette page s'ouvre sur cet ordinateur : le réseau laisse passer le site du complément et celui de Microsoft.");
+        ligne('etat', 'att', 'Prochaine étape : ouvrir le complément depuis Excel (bouton « J-LO » de l\'onglet Accueil).');
+        INFO.excel = 'pas encore (page ouverte dans le navigateur)'; resume(); return;
+      }
+      const ver = (Office.context.diagnostics && Office.context.diagnostics.version) || '?';
+      const pf = (Office.context.diagnostics && Office.context.diagnostics.platform) || '?';
+      INFO.excel = 'oui, version ' + ver + ' (' + pf + ')'; INFO.excelApi = apiMax();
+      ligne('etat', 'ok', 'Le complément s\'ouvre dans votre Excel.');
+      ligne('etat', 'ok', `Excel ${ver} · ${pf} · fonctions Excel ${INFO.excelApi}`);
+      $('boutons').hidden = false; resume();
+    });
+  });
+
+  // le test : lire, écrire dans un onglet caché, gros texte (comme les données du planning), réglages du fichier
+  $('lancer').addEventListener('click', async () => {
+    $('lancer').disabled = true; $('res').textContent = ''; $('res-carte').hidden = false;
+    try {
+      await Excel.run(async (ctx) => {
+        const sheets = ctx.workbook.worksheets; sheets.load('items/name');
+        const act = sheets.getActiveWorksheet(); act.load('name');
+        await ctx.sync();
+        ligne('res', 'ok', `Lecture : ${sheets.items.length} onglet(s), onglet ouvert « ${act.name} ».`); INFO.lecture = 'oui';
+        let ws = sheets.items.find((s) => s.name === 'JLO_TEST');
+        if (!ws) ws = sheets.add('JLO_TEST');
+        const petit = JSON.stringify({ test: 'J-LO', heure: new Date().toISOString(), accents: 'é è à ç ô « » ½ Loëx' });
+        // 150 000 caractères (les données du planning font environ 140 000), en morceaux de 30 000 (une case en prend 32 767)
+        const base = JSON.stringify({ codes: Array.from({ length: 4000 }, (_, i) => ['F' + (i % 9 + 1), 'CH', '36', '01', 'J9'][i % 5] + '|' + i) });
+        let gros = ''; while (gros.length < 150000) gros += base; gros = gros.slice(0, 150000);
+        const parts = []; for (let i = 0; i < gros.length; i += 30000) parts.push(['§' + gros.slice(i, i + 30000)]);
+        ws.getRange('A1').values = [['§' + petit]];
+        ws.getRange('B1:B' + parts.length).values = parts;
+        await ctx.sync();
+        const a1 = ws.getRange('A1'); a1.load('values');
+        const b = ws.getRange('B1:B' + parts.length); b.load('values');
+        await ctx.sync();
+        const lu = String(a1.values[0][0]).slice(1);
+        if (lu === petit) { ligne('res', 'ok', 'Écriture et relecture dans un onglet : bon (accents compris).'); INFO.ecriture = 'oui'; }
+        else { ligne('res', 'err', 'Écriture : ce qui est relu n\'est pas pareil.'); INFO.ecriture = 'non (relu différent)'; }
+        const lu2 = b.values.map((r) => String(r[0]).slice(1)).join('');
+        if (lu2 === gros) { ligne('res', 'ok', 'Gros texte (150 000 caractères, comme les données du planning) : bon.'); INFO.grosTexte = 'oui'; }
+        else { ligne('res', 'err', `Gros texte : relu ${lu2.length} caractères au lieu de ${gros.length}.`); INFO.grosTexte = 'non'; }
+        try {
+          ws.visibility = 'VeryHidden'; await ctx.sync(); ws.load('visibility'); await ctx.sync();
+          ligne('res', 'ok', `Onglet caché (invisible dans la liste des onglets) : ${ws.visibility === 'VeryHidden' ? 'bon' : ws.visibility}.`); INFO.ongletCache = ws.visibility === 'VeryHidden' ? 'oui' : String(ws.visibility);
+        } catch (e) { ligne('res', 'att', 'Onglet caché : pas possible (' + e.message + ').'); INFO.ongletCache = 'non'; }
+      });
+    } catch (e) { ligne('res', 'err', 'Erreur Excel : ' + (e.message || e)); INFO.erreur = String(e.message || e); }
+    // réglages enregistrés dans le fichier
+    await new Promise((ok) => {
+      try {
+        Office.context.document.settings.set('jlo_test', { heure: new Date().toISOString() });
+        Office.context.document.settings.saveAsync((r) => {
+          if (r.status === Office.AsyncResultStatus.Succeeded) { ligne('res', 'ok', 'Réglages gardés dans le fichier : bon.'); INFO.reglages = 'oui'; }
+          else { ligne('res', 'err', 'Réglages : ' + (r.error && r.error.message)); INFO.reglages = 'non'; }
+          ok();
+        });
+      } catch (e) { ligne('res', 'err', 'Réglages : ' + e.message); INFO.reglages = 'non'; ok(); }
+    });
+    resume(); $('lancer').disabled = false;
+  });
+
+  $('effacer').addEventListener('click', async () => {
+    try {
+      await Excel.run(async (ctx) => {
+        const sheets = ctx.workbook.worksheets; sheets.load('items/name'); await ctx.sync();
+        const ws = sheets.items.find((s) => s.name === 'JLO_TEST');
+        if (ws) { ws.visibility = 'Visible'; await ctx.sync(); ws.delete(); await ctx.sync(); }
+      });
+      Office.context.document.settings.remove('jlo_test'); Office.context.document.settings.saveAsync(() => {});
+      $('res').textContent = ''; ligne('res', 'ok', 'Test effacé : l\'onglet JLO_TEST est enlevé.'); $('res-carte').hidden = false;
+    } catch (e) { ligne('res', 'err', 'Effacer : ' + (e.message || e)); }
+  });
+</script>
+</body>
+</html>
